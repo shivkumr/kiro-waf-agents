@@ -34,8 +34,8 @@ All agents share 6 WAF pillar skill files as a single source of truth — update
 │  │ diagram-     │ diagram-   │ writer     │ validator│ resource│ │
 │  │ generator    │ reviewer   │            │          │         │ │
 │  │ MCP:         │ MCP:       │ MCP:       │ MCP:     │ MCP:    │ │
-│  │ Draw.io ✅   │ Draw.io ✅  │ Terraform ✅│Terraform✅│ AWS API✅│ │
-│  │ Docs ✅      │ Docs ✅     │ Docs ✅     │ Docs ✅   │ Docs ✅  │ │
+│  │ Draw.io      │ Draw.io    │ Terraform  │Terraform │ AWS API │ │
+│  │ Docs         │ Docs       │ Docs       │ Docs     │ Docs    │ │
 │  └──────────────┴────────────┴────────────┴──────────┴─────────┘ │
 │                                                                   │
 │  Shared: 6 WAF Skill Files (single source of truth)               │
