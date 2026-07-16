@@ -336,7 +336,7 @@ If expired, re-authenticate via SSO or refresh your credentials.
 
 ## License
 
-Internal use — Motorola Solutions Central IT Ops & Automation team.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
 
 ## Credits
 
