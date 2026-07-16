@@ -6,14 +6,16 @@ A multi-agent system built on [Kiro CLI](https://kiro.dev) that helps teams desi
 
 ```
 Natural Language → Architecture Diagram → IaC Code → Code Validation → Live Resource Audit
+                         ↓                    ↓              ↓                   ↓
+                   Auto-validated        Auto-validated   Fix suggestions    Remediation CLI
 ```
 
-One orchestrator agent (`waf-ops`) routes your requests to 5 specialist agents, each focused on a specific phase of the infrastructure lifecycle:
+One orchestrator agent (`waf-ops`) routes your requests to 5 specialist agents, each focused on a specific phase of the infrastructure lifecycle. Every generation step is automatically followed by a validation step.
 
 | Phase | Agent | What It Does |
 |-------|-------|--------------|
-| **Design** | `waf-diagram-generator` | Creates draw.io architecture diagrams from text descriptions |
-| **Review** | `waf-reviewer` | Reviews diagrams/architectures against all 6 WAF pillars |
+| **Design** | `waf-arch-diagram-generator` | Creates draw.io architecture diagrams from text descriptions |
+| **Review** | `waf-arch-diagram-reviewer` | Reviews diagrams/architectures against all 6 WAF pillars |
 | **Build** | `waf-iac-writer` | Generates WAF-compliant Terraform/CDK/CloudFormation |
 | **Validate** | `waf-iac-validator` | Static analysis of IaC code against WAF best practices |
 | **Audit** | `waf-resource-validator` | Checks live AWS resources against WAF best practices |
@@ -28,13 +30,16 @@ All agents share 6 WAF pillar skill files as a single source of truth — update
 │  MCP: AWS Docs | AWS API (read-only)                             │
 │                                                                   │
 │  ┌──────────────┬────────────┬────────────┬──────────┬─────────┐ │
-│  │ waf-diagram  │ waf-       │ waf-iac-   │ waf-iac- │ waf-    │ │
-│  │ -generator   │ reviewer   │ writer     │ validator│ resource│ │
-│  │ Draw.io MCP  │ (no MCP)   │ Terraform  │Terraform │ AWS API │ │
-│  │ + Docs MCP   │            │ + Docs MCP │+ Docs MCP│+ Docs   │ │
+│  │ waf-arch-    │ waf-arch-  │ waf-iac-   │ waf-iac- │ waf-    │ │
+│  │ diagram-     │ diagram-   │ writer     │ validator│ resource│ │
+│  │ generator    │ reviewer   │            │          │         │ │
+│  │ MCP:         │ MCP:       │ MCP:       │ MCP:     │ MCP:    │ │
+│  │ Draw.io ✅   │ Draw.io ✅  │ Terraform ✅│Terraform✅│ AWS API✅│ │
+│  │ Docs ✅      │ Docs ✅     │ Docs ✅     │ Docs ✅   │ Docs ✅  │ │
 │  └──────────────┴────────────┴────────────┴──────────┴─────────┘ │
 │                                                                   │
 │  Shared: 6 WAF Skill Files (single source of truth)               │
+│  Automatic Validation Chain: Generate → Validate → Fix Loop       │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -78,7 +83,7 @@ kiro-cli settings chat.enableTodoList true
 
 ## Installation
 
-1. **Clone or copy** the `kiro-waf-agent/` folder into your project:
+1. **Clone or copy** the `.kiro/` folder into your project:
    ```bash
    cp -r kiro-waf-agent/.kiro /path/to/your/project/.kiro
    ```
@@ -93,7 +98,7 @@ kiro-cli settings chat.enableTodoList true
    ```
    /agent list
    ```
-   You should see: `waf-ops`, `waf-diagram-generator`, `waf-reviewer`, `waf-iac-writer`, `waf-iac-validator`, `waf-resource-validator`
+   You should see: `waf-ops`, `waf-arch-diagram-generator`, `waf-arch-diagram-reviewer`, `waf-iac-writer`, `waf-iac-validator`, `waf-resource-validator`
 
 ## Usage
 
@@ -124,15 +129,20 @@ That's it. Talk naturally — the orchestrator routes to the right specialist.
   - CloudWatch alarms on errors
 ```
 
-→ `waf-diagram-generator` creates a `.drawio` file with official AWS icons, proper VPC boundaries, and WAF best practices baked in.
+→ `waf-arch-diagram-generator` creates a `.drawio` file with official AWS icons
+→ `waf-arch-diagram-reviewer` **automatically validates** the diagram against WAF pillars
 
-#### Step 2: Review the Architecture
+#### Step 2: Review Findings
 
+The orchestrator shows validation results:
 ```
-> Review the diagram I just generated for WAF compliance
-```
+✅ Security — private subnets, encryption indicators present
+✅ Reliability — DLQ configured, CloudWatch alarms
+⚠️ Operational Excellence — no X-Ray tracing shown
+⚠️ Cost — no lifecycle policy on S3
 
-→ `waf-reviewer` analyzes against all 6 pillars and reports: ✅ Good / ⚠️ Needs Improvement / ❌ Critical Gap for each.
+Should I fix the diagram? [yes/no]
+```
 
 #### Step 3: Generate the Terraform
 
@@ -140,30 +150,20 @@ That's it. Talk naturally — the orchestrator routes to the right specialist.
 > Now generate the Terraform for this architecture
 ```
 
-→ `waf-iac-writer` produces modular `.tf` files with:
-- Encryption enabled everywhere
-- Proper IAM roles (least privilege)
-- Tags on all resources
-- CloudWatch alarms configured
-- Comments explaining each WAF decision
+→ `waf-iac-writer` produces modular `.tf` files with WAF best practices
+→ `waf-iac-validator` **automatically validates** the generated code
 
-#### Step 4: Validate the Code
+#### Step 4: Fix Issues (Automatic Loop)
 
-```
-> Validate the Terraform in ./terraform/
-```
-
-→ `waf-iac-validator` reads the files and reports per-pillar findings:
 ```
 ❌ Security | main.tf:42 | S3 bucket missing Block Public Access
    Fix: Add `aws_s3_bucket_public_access_block` resource
 
-⚠️ Reliability | rds.tf:18 | RDS instance not Multi-AZ
-   Fix: Set `multi_az = true`
-
-💡 Cost | lambda.tf:9 | Lambda memory at 1024MB but CPU-bound workload
-   Fix: Consider 512MB with ARM architecture (Graviton)
+Should I fix the code? [yes/no]
+> yes
 ```
+
+→ `waf-iac-writer` corrects the issues and re-validates
 
 #### Step 5: Audit Live Resources
 
@@ -171,16 +171,7 @@ That's it. Talk naturally — the orchestrator routes to the right specialist.
 > Check if the deployed Lambda and DynamoDB in us-east-1 match best practices
 ```
 
-→ `waf-resource-validator` queries live AWS via API and reports:
-```
-❌ Security | arn:aws:lambda:us-east-1:123:function:processor
-   Current: Runtime python3.9 (EOL)
-   Expected: python3.12+
-   Fix: aws lambda update-function-configuration --runtime python3.12
-
-✅ Reliability | arn:aws:dynamodb:us-east-1:123:table/results
-   Point-in-time recovery enabled, on-demand capacity
-```
+→ `waf-resource-validator` queries live AWS via API and reports findings with remediation commands
 
 ### Parallel Workflows
 
@@ -189,12 +180,19 @@ Run multiple specialists simultaneously:
 ```
 > Draw the diagram AND generate the Terraform for a 3-tier web app
 ```
-→ `waf-diagram-generator` + `waf-iac-writer` run in parallel
+→ `waf-arch-diagram-generator` + `waf-iac-writer` run in parallel
 
 ```
 > Validate my Terraform AND check the live resources
 ```
 → `waf-iac-validator` + `waf-resource-validator` run in parallel
+
+### Skip Validation
+
+If you want speed over safety:
+```
+> Draw a diagram, skip validation
+```
 
 ### Direct Access (Skip Orchestrator)
 
@@ -203,8 +201,8 @@ Use keyboard shortcuts to go directly to a specialist:
 | Shortcut | Agent |
 |----------|-------|
 | `Ctrl+Shift+W` | waf-ops (orchestrator) |
-| `Ctrl+Shift+D` | waf-diagram-generator |
-| `Ctrl+Shift+A` | waf-reviewer |
+| `Ctrl+Shift+D` | waf-arch-diagram-generator |
+| `Ctrl+Shift+A` | waf-arch-diagram-reviewer |
 | `Ctrl+Shift+I` | waf-iac-writer |
 | `Ctrl+Shift+V` | waf-iac-validator |
 | `Ctrl+Shift+R` | waf-resource-validator |
@@ -223,11 +221,13 @@ The orchestrator handles documentation questions directly:
 
 ```
 kiro-waf-agent/
+├── README.md
+├── LICENSE                                 # Apache 2.0
 └── .kiro/
     ├── agents/
     │   ├── waf-ops.json                    # Orchestrator (5 subagents)
-    │   ├── waf-diagram-generator.json      # Draw.io diagram creation
-    │   ├── waf-reviewer.json               # Architecture review
+    │   ├── waf-arch-diagram-generator.json # Draw.io diagram creation
+    │   ├── waf-arch-diagram-reviewer.json  # Diagram validation
     │   ├── waf-iac-writer.json             # IaC code generation
     │   ├── waf-iac-validator.json          # IaC static analysis
     │   └── waf-resource-validator.json     # Live resource audit
@@ -247,10 +247,21 @@ kiro-waf-agent/
 
 | MCP Server | Purpose | Required By |
 |------------|---------|-------------|
-| [AWS Documentation](https://awslabs.github.io/mcp/servers/aws-documentation-mcp-server) | Search/read AWS docs | All except reviewer |
+| [AWS Documentation](https://awslabs.github.io/mcp/servers/aws-documentation-mcp-server) | Search/read AWS docs | All agents |
 | [AWS API](https://awslabs.github.io/mcp/servers/aws-api-mcp-server) | Query live AWS resources (read-only) | waf-ops, waf-resource-validator |
-| [Draw.io](https://aws-samples.github.io/sample-drawio-mcp/) | Generate architecture diagrams | waf-diagram-generator |
+| [Draw.io](https://aws-samples.github.io/sample-drawio-mcp/) | Generate/read architecture diagrams | waf-arch-diagram-generator, waf-arch-diagram-reviewer |
 | [Terraform](https://github.com/hashicorp/terraform-mcp-server) | Provider docs, resource schemas | waf-iac-writer, waf-iac-validator |
+
+## Automatic Validation Chain
+
+Every generation step is followed by automatic validation:
+
+```
+Generate Diagram → Validate Diagram → Fix Loop (if critical gaps)
+Generate IaC     → Validate IaC     → Fix Loop (if critical issues)
+```
+
+This ensures output quality without manual intervention. Say "skip validation" to bypass.
 
 ## Customization
 
@@ -301,6 +312,7 @@ This project showcases these advanced Kiro CLI capabilities:
 4. **MCP Servers** — External tool integrations (AWS, Terraform, Draw.io)
 5. **Subagents** — Parallel execution of multiple specialists
 6. **Keyboard Shortcuts** — Quick agent switching
+7. **Tool Trust** — Auto-approved tools eliminate approval fatigue
 
 ## Troubleshooting
 
@@ -321,9 +333,12 @@ npx -y https://github.com/aws-samples/sample-drawio-mcp/releases/latest/download
 
 Ensure you're running `kiro-cli chat` from within the `kiro-waf-agent/` directory (or a directory containing the `.kiro/` folder).
 
-### Subagent approval prompts
+### Subagent takes too long
 
-`waf-iac-writer` requires approval because it writes files. The other 4 specialists are auto-trusted (read-only). Press `y` when prompted.
+If execution exceeds 5 minutes, check:
+- Are all tools in `allowedTools`? (prevents approval prompts)
+- Is Docker running? (Terraform MCP needs it)
+- Is `uv` installed? (AWS MCP servers need it)
 
 ### AWS API access denied
 

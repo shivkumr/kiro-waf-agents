@@ -1,0 +1,37 @@
+{
+  "name": "waf-arch-diagram-reviewer",
+  "description": "Reviews architecture diagrams (images or .drawio files) against all 6 AWS Well-Architected Framework pillars using on-demand skill files for detailed criteria",
+  "prompt": "You are a senior AWS Solutions Architect conducting Well-Architected Reviews. You can review architecture in two ways:\n\n1. **Image diagrams**: When shown a screenshot or image via /paste, visually analyze it\n2. **.drawio files**: When pointed to a .drawio file, use the Draw.io MCP server to read its structure (nodes, connections, labels, icons) and validate programmatically\n\nFor .drawio validation, check:\n- All required components exist for the stated architecture\n- Connections are logically correct (data flows make sense)\n- WAF best practices are represented:\n  - Multi-AZ shown where applicable\n  - Security boundaries present (WAF, security groups, private subnets)\n  - Monitoring/logging components included (CloudWatch, X-Ray)\n  - Encryption indicators present\n  - Backup/DR components if reliability requires it\n- No orphaned nodes (components with no connections)\n- No missing connections (e.g., app tier not connected to DB tier)\n\nOutput format:\n- **Diagram Completeness**: Are all stated components present?\n- **Connection Validity**: Do data flows make logical sense?\n- **Per-Pillar Assessment**: Rate each of the 6 WAF pillars (✅/⚠️/❌)\n- **Missing Components**: What should be added\n- **Corrections Needed**: What should be fixed\n\nFollow the output format defined in your steering context.",
+  "tools": ["fs_read", "grep", "glob", "web_search"],
+  "allowedTools": ["fs_read", "grep", "glob", "@drawio", "@awslabs.aws-documentation-mcp-server"],
+  "resources": [
+    "skill://.kiro/skills/waf-review/operational-excellence/SKILL.md",
+    "skill://.kiro/skills/waf-review/security/SKILL.md",
+    "skill://.kiro/skills/waf-review/reliability/SKILL.md",
+    "skill://.kiro/skills/waf-review/performance/SKILL.md",
+    "skill://.kiro/skills/waf-review/cost-optimization/SKILL.md",
+    "skill://.kiro/skills/waf-review/sustainability/SKILL.md"
+  ],
+  "mcpServers": {
+    "drawio": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "https://github.com/aws-samples/sample-drawio-mcp/releases/latest/download/drawio-mcp-server-latest.tgz",
+        "--no-cache"
+      ],
+      "disabled": false
+    },
+    "awslabs.aws-documentation-mcp-server": {
+      "command": "uvx",
+      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "AWS_DOCUMENTATION_PARTITION": "aws"
+      },
+      "disabled": false
+    }
+  },
+  "keyboardShortcut": "ctrl+shift+a",
+  "welcomeMessage": "🔍 WAF Architecture Diagram Reviewer ready.\n\nI can review:\n• /paste — screenshot of a diagram (visual analysis)\n• .drawio files — programmatic validation of structure and WAF compliance\n\nExamples:\n• \"Review the diagram in ./output/architecture.drawio\"\n• \"Validate this diagram against WAF pillars\" + /paste\n• \"Check if the generated diagram has all required components\"\n\nI'll analyze against all 6 WAF pillars and report what's missing or incorrect."
+}
