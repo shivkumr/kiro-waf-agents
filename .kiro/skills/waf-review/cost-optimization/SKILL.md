@@ -1,26 +1,22 @@
 ---
 name: waf-cost-optimization
-description: AWS Well-Architected Cost Optimization pillar review criteria. Use when evaluating architecture for scaling efficiency, pricing models, data transfer, storage tiering, and resource waste.
+description: AWS Well-Architected Cost Optimization pillar. Use when reviewing, generating, or validating architecture for scaling efficiency, pricing models, data transfer, storage tiering, and resource waste.
 ---
 
-# Cost Optimization — Review Criteria
+# Cost Optimization
 
-## Checklist
+## Checklist (for reviewers/validators)
 
 ### Right-Sizing & Scaling
-- [ ] Compute sized to actual utilization (not peak + large buffer)
+- [ ] Compute sized to actual utilization
 - [ ] Auto-scaling configured to scale down during off-hours
-- [ ] Scheduled scaling for predictable patterns (business hours)
+- [ ] Scheduled scaling for predictable patterns
 - [ ] Serverless for variable/unpredictable workloads
 - [ ] Dev/test environments shut down outside business hours
 
 ### Pricing Models
 - [ ] Savings Plans or Reserved Instances for steady-state workloads
 - [ ] Spot instances for fault-tolerant batch/CI workloads
-- [ ] Mix of commitment types matching workload predictability:
-  - Compute SP: flexible across instance families
-  - EC2 Instance SP: highest discount, specific family
-  - RDS RI: specific engine and instance
 - [ ] Commitment coverage reviewed quarterly
 
 ### Data Transfer
@@ -28,40 +24,105 @@ description: AWS Well-Architected Cost Optimization pillar review criteria. Use 
 - [ ] CloudFront for content delivery (cheaper egress)
 - [ ] Same-AZ communication for chatty services where possible
 - [ ] Cross-region replication justified by DR requirements
-- [ ] S3 access patterns match storage class
 
 ### Storage Optimization
-- [ ] S3 lifecycle policies (Standard → IA → Glacier → Delete)
-- [ ] EBS volumes right-sized (gp3 > gp2, no unattached volumes)
-- [ ] RDS storage auto-scaling enabled
+- [ ] S3 lifecycle policies configured
+- [ ] EBS volumes right-sized (gp3 preferred over gp2)
+- [ ] No unattached EBS volumes
 - [ ] Old snapshots and AMIs cleaned up
-- [ ] Log retention periods defined and enforced
+- [ ] Log retention periods defined
 
 ### Governance & Visibility
-- [ ] Cost allocation tags on all resources (Team, Service, Environment)
+- [ ] Cost allocation tags on all resources
 - [ ] AWS Budgets with alerts configured
 - [ ] Cost anomaly detection enabled
-- [ ] Regular cost reviews (weekly/monthly)
-- [ ] Showback/chargeback model for shared services
+- [ ] Regular cost reviews scheduled
 
 ### Unused Resource Detection
-- [ ] Idle EC2 instances (CPU <5% sustained)
-- [ ] Unattached EBS volumes
-- [ ] Unused Elastic IPs
-- [ ] Idle load balancers (no targets)
-- [ ] Orphaned snapshots with no parent AMI/volume
-- [ ] Inactive IAM users/roles
+- [ ] No idle EC2 instances (CPU <5% sustained)
+- [ ] No unattached EBS volumes
+- [ ] No unused Elastic IPs
+- [ ] No idle load balancers (no targets)
+- [ ] No orphaned snapshots
+
+## Implementation Guide (for writers/generators)
+
+### Right-Sizing Principles
+
+- Start small, scale up based on metrics — never pre-provision for theoretical peak
+- Use Fargate for containers (pay per vCPU-second, no idle waste)
+- Lambda for event-driven (pay per invocation, zero cost at zero traffic)
+- For steady-state EC2: choose Graviton instances (20% cheaper for same performance)
+- Set ASG min to actual minimum needed, not "comfortable buffer"
+- For dev/test: configure Instance Scheduler or ASG scheduled actions to stop outside 8am-6pm
+
+### Data Transfer Awareness
+
+- Use S3 Gateway Endpoint (free) instead of NAT Gateway ($0.045/GB) for S3 access
+- Use DynamoDB Gateway Endpoint (free) for DynamoDB access
+- Place chatty services in the same AZ when possible (free same-AZ private IP traffic)
+- Use CloudFront even for same-region delivery (egress through CF is cheaper than direct)
+- Avoid cross-region data transfer unless required for DR — document justification
+- If cross-AZ traffic is significant: consider AZ-affinity patterns for chatty services
+
+### Storage Tiering
+
+- S3: apply Intelligent-Tiering for unknown access patterns, or explicit lifecycle rules:
+  - Standard → Infrequent Access after 30 days
+  - IA → Glacier Instant Retrieval after 90 days
+  - Glacier → Deep Archive after 180 days (or delete)
+- EBS: use gp3 (not gp2) — 20% cheaper with better baseline performance
+- Set explicit log retention: 7 days dev, 30 days staging, 90 days prod
+- Enable S3 lifecycle to expire incomplete multipart uploads after 7 days
+- Schedule monthly cleanup of unattached volumes and orphaned snapshots
+
+### Tagging Strategy
+
+- Mandatory tags on every resource: `Environment`, `Service`, `Team`, `CostCenter`
+- Enforce via SCP or Config rules that deny untagged resource creation
+- Use tag-based cost allocation reports in Cost Explorer
+- Add `AutoStop` tag for resources that should be scheduled on/off
+
+### Commitment Planning
+
+- Compute Savings Plans: cover steady-state baseline (start at 50-60% of on-demand)
+- Use 1-year no-upfront for flexibility, 3-year all-upfront only for proven stable workloads
+- Review coverage quarterly — adjust as workload patterns change
+- Never commit more than current steady-state floor
+
+### Diagram Components
+
+When generating architecture diagrams:
+- Annotate NAT Gateways with "consider VPC endpoint" where applicable
+- Show VPC endpoints for S3 and DynamoDB (highlight cost savings)
+- Label compute resources with sizing tier (not specific instance type in diagrams)
+- Show scheduled scaling indicators on dev/test resources
+- Note where CloudFront reduces origin egress costs
+
+## Data Transfer Cost Reference
+
+| Path | Cost |
+|------|------|
+| Internet → AWS | Free |
+| AWS → Internet | ~$0.09/GB (first 10TB) |
+| Same AZ (private IP) | Free |
+| Cross AZ | $0.01/GB each direction |
+| Cross Region | $0.02/GB |
+| NAT Gateway processing | $0.045/GB |
+| VPC Endpoint (Gateway) | Free |
+| VPC Endpoint (Interface) | $0.01/GB + hourly |
+| CloudFront → Internet | ~$0.085/GB (cheaper than direct) |
 
 ## Common Anti-Patterns
 
 | Anti-Pattern | Risk | Fix |
 |---|---|---|
-| Dev environments running 24/7 | 70% waste (only used ~8h/day) | Instance Scheduler or auto-scaling to 0 |
-| No S3 lifecycle policies | Paying Standard prices for rarely-accessed data | Intelligent-Tiering or lifecycle rules |
-| NAT Gateway for all traffic | $0.045/GB adds up fast | VPC endpoints for S3, DynamoDB, etc. |
-| No commitment plans for stable workloads | Paying 40-60% more than necessary | Compute Savings Plans |
-| Untagged resources | No visibility into who owns what | Enforce tagging via SCP + Config rules |
-| Large data transfer cross-region for non-DR reasons | Unnecessary data transfer costs | Colocate services, use Global Accelerator |
+| Dev environments running 24/7 | 70% waste | Instance Scheduler or scale-to-zero |
+| No S3 lifecycle policies | Paying Standard for cold data | Intelligent-Tiering or lifecycle rules |
+| NAT Gateway for S3/DynamoDB traffic | $0.045/GB wasted | Gateway endpoints (free) |
+| No commitment plans for stable workloads | Paying 40-60% more | Compute Savings Plans |
+| Untagged resources | No cost visibility | Enforce tagging via SCP + Config |
+| gp2 EBS volumes | 20% more expensive than gp3 | Migrate to gp3 |
 
 ## Key AWS Services
 
@@ -70,26 +131,6 @@ description: AWS Well-Architected Cost Optimization pillar review criteria. Use 
 - **Cost Anomaly Detection**: ML-based spend anomalies
 - **Compute Optimizer**: Right-sizing recommendations
 - **Savings Plans**: Flexible commitment discounts
-- **S3 Intelligent-Tiering**: Automatic storage class optimization
+- **S3 Intelligent-Tiering**: Automatic storage optimization
 - **Instance Scheduler**: Start/stop on schedule
 - **Trusted Advisor**: Idle resource detection
-
-## Quick Reference: Data Transfer Costs
-
-| Path | Cost |
-|------|------|
-| Internet → AWS | Free |
-| AWS → Internet | $0.09/GB (first 10TB) |
-| Same AZ | Free (private IP) |
-| Cross AZ | $0.01/GB each direction |
-| Cross Region | $0.02/GB |
-| NAT Gateway processing | $0.045/GB |
-| VPC Endpoint (Gateway) | Free |
-| VPC Endpoint (Interface) | $0.01/GB + hourly |
-| CloudFront → Internet | $0.085/GB (cheaper than direct) |
-
-## Example Findings
-
-**Good**: "Production uses Compute Savings Plans (70% coverage), dev environments auto-stop at 7pm via Instance Scheduler, S3 lifecycle moves logs to Glacier after 30 days, all resources tagged with CostCenter and Team"
-
-**Bad**: "12 m5.2xlarge instances running at 8% average CPU, no commitment plans, 500GB of gp2 EBS unattached, NAT Gateway processing 2TB/month to reach S3 (should use gateway endpoint)"
